@@ -8,9 +8,10 @@ import cors from 'cors';
 import admin    from "firebase-admin"
 import { readFileSync } from 'fs';
 
-const serviceAccount = JSON.parse(
-    readFileSync("./mern-blogging-website-e3921-firebase-adminsdk-hyrx9-a1aabfb15f.json", 'utf-8')
-);
+//const serviceAccount = JSON.parse(
+ //   readFileSync("./mern-blogging-website-e3921-firebase-adminsdk-hyrx9-a1aabfb15f.json", 'utf-8')
+//);
+
 
 import {getAuth} from "firebase-admin/auth"
 import aws from "aws-sdk";
@@ -152,9 +153,9 @@ server.post("/signin" , (req, res) => {
     })
 })
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-})
+//admin.initializeApp({
+//    credential: admin.credential.cert(serviceAccount)
+//})
 
 server.post("/google-auth", async (req, res) =>{
     let {access_token} = req.body;
@@ -241,8 +242,6 @@ server.post('/create-blog', verifyJWT,(req, res) =>{
 
     let authorId = req.user;
 
-
-
     let {title, des, banner, tags, content, draft, id} = req.body;
 
     if(!title.length){
@@ -250,35 +249,52 @@ server.post('/create-blog', verifyJWT,(req, res) =>{
     }
 
     if(!draft){
-        if(!des.length || des.length > 200){
+        if(! des || !des.length || des.length > 200){
             return res.status(403).json({"error": "Description is required under 200 characters"})
         }
-        if(!banner.length){
+        if(!banner || !banner.length){
             return res.status(403).json({"error": "Banner image is required"})
         }
-        if(!tags.length || tags.length > 10){
+        if(!tags || !tags.length || tags.length > 10){
             return res.status(403).json({"error": "At least one tag is required, maximum 10"})
         }
-        if(!content.blocks.length){
+        if(!content || !content.blocks || !content.blocks.length){
             return res.status(403).json({"error": "Content is required"})
         }
     }
 
-    tags = tags.map(tag => tag.toLowerCase())
+    tags = tags ?  tags.map(tag => tag.toLowerCase()) : [];
     let blog_id = id || title.replace(/[^a-z-A-Z0-9]/g, " ").replace(/\s+/g, "-").trim() + nanoid();
     if(id){
 
-        Blog.findOneAndUpdate({blog_id: blog_id}, {title, des, banner, content, tags, draft: draft ? draft : false})
-        .then(() => {
-            return res.status(200).json({id: blog_id})
+        Blog.findOne({ $or : [{ blog_id:id},{old_slugs: id} ]})
+        .then(existingBlog => {
+            if(!existingBlog){
+                return res.status(404).json({error: "blog not found"});
+            }
+            let new_blog_id =existingBlog.blog_id;
+            let updateQuery={ title,des,banner,content,tags,draft: draft ? Boolean(draft) :false };
+
+            if(existingBlog.title!== title){
+                new_blog_id=title.replace(/[^a-z-A-Z0-9]/g, " ").replace(/\s+/g, "-").trim() + nanoid();
+                updateQuery.blog_id=new_blog_id;
+                updateQuery.$addToSet={old_slugs: existingBlog.blog_id};
+            }
+            Blog.findOneAndUpdate({ _id: existingBlog._id}, updateQuery,{new: true})
+            .then(() =>{
+                return res.status(200).json({id: new_blog_id});
+            })
+            .catch(err =>{
+                return res.status(500).json({ error : "failed to update blog"});
+            });
         })
-        .catch(err => {
-            console.log(err.message);
-            return res.status(500).json({error: "failed to update blog"})
-        })
+        .catch(err =>{
+            return res.status(500).json({ error : err.message });
+        });       
 
     }
     else{
+        let blog_id = id || title.replace(/[^a-z-A-Z0-9]/g, " ").replace(/\s+/g, "-").trim() + nanoid();
         let blog = new Blog({
             title, des, banner, content, tags, author: authorId, blog_id, draft: Boolean(draft)
         })
@@ -397,11 +413,22 @@ server.post("/get-profile", (req, res) => {
 
 server.post("/get-blog", (req, res) => {
     let {blog_id, draft, mode} = req.body;
+
+    if(!blog_id){
+        return res.status(400).json({error : "Invalid blog identifier"});
+    }
+
     let incrementVal = mode != "edit" ? 1: 0;
-    Blog.findOneAndUpdate({blog_id}, {$inc: {"activity.total_reads": incrementVal}})
+    Blog.findOneAndUpdate(
+        { $or: [{blog_id},{ old_slugs:blog_id}]}, 
+        {$inc: {"activity.total_reads": incrementVal}})
     .populate("author", "personal_info.fullname personal_info.username personal_info.profile_img")
     .select("title des content banner activity publishedAt blog_id tags")
     .then(blog => {
+        if(!blog_id){
+            return res.status(404).json({error : " blog not found"});
+        }
+
         User.findOneAndUpdate({"personal_info.username": blog.author.personal_info.username}, {$inc: {"activity.total_reads": incrementVal}})
         .catch(err => {
             return res.status(500).json({error:  err.message})

@@ -7,6 +7,10 @@ const blogSchema = mongoose.Schema({
         required: true,
         unique: true,
     },
+    old_slugs:{
+        type: [String],
+        default: []
+    },
     title: {
         type: String,
         required: true,

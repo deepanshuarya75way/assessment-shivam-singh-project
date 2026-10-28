@@ -4,8 +4,9 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base:"/mern-blogging-website/",
+  base:"/",
   server: {
-        historyApiFallback: true, // Handles routing for client-side applications
-  },
+        host:true,
+        port:5173
+  }
 })

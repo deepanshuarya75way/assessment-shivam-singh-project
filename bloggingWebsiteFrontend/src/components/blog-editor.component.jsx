@@ -32,20 +32,9 @@ const BlogEditor = () => {
     const handleBannerUpload = (e) => {
         let img = e.target.files[0];
         if(img){
-            let loadingToast = toast.loading("Uploading...")
-            uploadImage(img).then((url) => {
-                if(url){
-                    
-                    toast.dismiss(loadingToast);
-                    toast.success("uploaded successfully");
-                    setBlog({...blog, banner: url})
-            
-                }
-            })
-            .catch(err => {
-                toast.dismiss(loadingToast);
-                return toast.error("Failed to upload image");
-            })
+            let localUrl=URL.createObjectURL(img);
+            setBlog({ ...blog ,banner:localUrl});
+            toast.success("Uploaded Successfully");
         }
     }
 
